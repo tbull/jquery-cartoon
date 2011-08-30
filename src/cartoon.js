@@ -1,11 +1,4 @@
 /*
- *  Cartoon
- *
- *  Cartoon-like animation of background images in jQuery
- *
- *  Copyright (C) 2011 by Roland Bluethgen (a.k.a. T-Bull) <tbull (at) tbull (dot) org>
- *
- *
  *  Terminology
  *  ===========
  *

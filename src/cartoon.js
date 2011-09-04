@@ -111,6 +111,7 @@
  *          overrides the loopDelay setting (TODO: want that?)
  *
  *
+ *  Unless documented otherwise, all public functions return the cartoon object for chaining.
  */
 
 (function ($) {
@@ -402,72 +403,11 @@
 
 
 
-
-
-    /** Cartoon setup function which attaches a cartoon object to the element on which it is called.
-     *  Returns the cartoon object, on which methods can be called then.
-     *
-     *  The settings are used to modify the builtin default settings.
-     *
-     *  If there already is a cartoon object initialised for this element, that one is retrieved and
-     *  returned. In this case, the settings, if supplied, are merged into the existing settings. This
-     *  can be used to modify settings on an operational cartoon. Take care not to mess things up if
-     *  you do this.
-     */
-
-    $.fn.cartoon = function (settings) {
-
-        var screen, cartoon;
-
-
-        /** Merges the settings passed with the current settings in the cartoon object
-         *  after some sanity checks and adjustments
+        /** Creates a default settings object for the given screen
+         *  usable as a base for further adjustments.
          */
-        function merge_settings(settings) {
-            if (settings) {
-                // translate fps to delay; non-numeric values are rejected
-                if (settings.fps) {
-                    settings.fps *= 1;
-                    if (settings.fps) settings.delay = 1000 / settings.fps;
-                }
-
-                // adjust delay for minimum; non-numeric values are rejected
-                if (settings.delay) {
-                    settings.delay *= 1;
-                    if (settings.delay) {
-                        if (settings.delay < 10) settings.delay = 10;
-                    } else {
-                        delete settings.delay;
-                    }
-                }
-
-                // allow abbreviations for the mode word
-                if (settings.mode) {
-                    if (settings.mode.toLowerCase().indexOf("seq") === 0)
-                        settings.mode = "sequence";
-                    if (settings.mode.toLowerCase().indexOf("var") === 0)
-                        settings.mode = "varsequence";
-                }
-
-                // merge with defaults
-                $.extend(cartoon._settings, settings);
-            }
-        }
-
-
-
-        /* narrow down the jQuery selection to only one matched element */
-        screen = this.length === 1 ? this : this.first();
-
-
-
-        /* check if a cartoon is already assigned to this element, take that one,
-         *  otherwise create a new cartoon object from default values
-         *  then merge the given settings
-         */
-        cartoon = this.data('cartoon') || {
-            _screen: screen,
-            _settings: {
+        function _default_settings(screen) {
+            return {
                 mode: "movie",
                 width: screen.width(),
                 height: screen.height(),
@@ -481,7 +421,96 @@
                 loopDelay: 0,
                 sequence: [ ],
                 onLastFrame: null
-            },
+            };
+        }
+
+
+        /** Merges the settings passed into the target settings
+         *  after some sanity checks and adjustments.
+         *
+         *  We have this separate from configure() to retain the free
+         *  choice of the target object.
+         */
+        function _merge_settings(target, settings) {
+            if (!settings) return;
+
+            // translate fps to delay; non-numeric values are rejected
+            if (settings.fps) {
+                settings.fps *= 1;
+                if (settings.fps) settings.delay = 1000 / settings.fps;
+            }
+
+            // adjust delay for minimum; non-numeric values are rejected
+            if (settings.delay) {
+                settings.delay *= 1;
+                if (settings.delay) {
+                    if (settings.delay < 10) settings.delay = 10;
+                } else {
+                    delete settings.delay;
+                }
+            }
+
+            // allow abbreviations for the mode word
+            if (settings.mode) {
+                if (settings.mode.toLowerCase().indexOf("seq") === 0)
+                    settings.mode = "sequence";
+                if (settings.mode.toLowerCase().indexOf("var") === 0)
+                    settings.mode = "varsequence";
+            }
+
+            // merge with target
+            $.extend(target, settings);
+        }
+
+
+
+
+    /** Changes the configuration of the cartoon.
+     *  The argument is the same as passed to the cartoon creation function.
+     *
+     *  This will modify the settings of a running cartoon without further questions.
+     *  This may or may not have immediate effect. Take care not to mess things up.
+     *  If you want to be absolutely sure, stop() and rewind() the cartoon before
+     *  configuring.
+     */
+    function configure(settings) {
+        _merge_settings(this._settings, settings);
+        return this;
+    }
+
+
+
+
+
+
+    /** Cartoon setup function which attaches a cartoon object to the element on which it is called.
+     *  Returns the cartoon object, on which methods can then be called.
+     *
+     *  The settings are used to modify the builtin default settings. It's a simple key-value map with
+     *  the keys being the documented options.
+     *
+     *  If there already is a cartoon object initialised for this element, that one is retrieved and
+     *  returned. In this case, the settings, if supplied, are merged into the existing settings. This
+     *  can be used to modify settings on an operational cartoon. Take care not to mess things up if
+     *  you do this.
+     */
+
+    $.fn.cartoon = function (settings) {
+
+        var screen, cartoon;
+
+
+        /* narrow down the jQuery selection to only one matched element */
+        screen = this.length === 1 ? this : this.first();
+
+
+        /* check if a cartoon is already assigned to this element, take that one,
+         *  otherwise create a new cartoon object from default values
+         *  then merge the given settings
+         */
+        cartoon = this.data('cartoon') || {
+            _screen: screen,
+            _settings: _default_settings(screen),
 
             _status: {
                 timeout: null,          /* if non-null, we're currently play()ing */
@@ -495,10 +524,11 @@
             skipTo: skipTo,
             displayFrame: displayFrame,
             getSequenceNumber: getSequenceNumber,
-            getScreen: getScreen
+            getScreen: getScreen,
+            configure: configure
         };
 
-        merge_settings(settings);
+        cartoon.configure(settings);
 
 
         /* some sanity checks */

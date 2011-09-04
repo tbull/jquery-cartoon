@@ -210,6 +210,9 @@
             _display_frame.call(this, frameno);
             this._status.seqno = seqno;
         }
+
+// TODO: invoke onLastFrame callback
+
         return this;
     }
 
@@ -401,7 +404,7 @@
 
 
 
-    /** Cartoon setup function which attaches a cartoon object to the element on which this is called.
+    /** Cartoon setup function which attaches a cartoon object to the element on which it is called.
      *  Returns the cartoon object, on which methods can be called then.
      *
      *  The settings are used to modify the builtin default settings.
@@ -422,13 +425,23 @@
          */
         function merge_settings(settings) {
             if (settings) {
-                // translate fps to delay
-                if (settings.fps)
-                    settings.delay = 1000 / settings.fps;
-                // adjust delay for minimum
-                if (settings.delay && settings.delay < 10)
-                    settings.delay = 10;
+                // translate fps to delay; non-numeric values are rejected
+                if (settings.fps) {
+                    settings.fps *= 1;
+                    if (settings.fps) settings.delay = 1000 / settings.fps;
+                }
 
+                // adjust delay for minimum; non-numeric values are rejected
+                if (settings.delay) {
+                    settings.delay *= 1;
+                    if (settings.delay) {
+                        if (settings.delay < 10) settings.delay = 10;
+                    } else {
+                        delete settings.delay;
+                    }
+                }
+
+                // allow abbreviations for the mode word
                 if (settings.mode) {
                     if (settings.mode.toLowerCase().indexOf("seq") === 0)
                         settings.mode = "sequence";

@@ -397,7 +397,7 @@
      *  which gets the
      */
     function getScreen() {
-        return this._settings.screen;
+        return this._screen;
     }
 
 

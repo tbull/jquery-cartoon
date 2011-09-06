@@ -209,7 +209,7 @@
 
         if (frameno !== null) {
             _display_frame.call(this, frameno);
-            this._status.seqno = seqno;
+            this._state.seqno = seqno;
         }
 
 // TODO: invoke onLastFrame callback
@@ -241,7 +241,7 @@
      */
     function step() {
         var s = this._settings;
-        var seqno = this._status.seqno;
+        var seqno = this._state.seqno;
         var seqlen;
         var progress;
 
@@ -291,7 +291,7 @@
         /* display the thing (unless nothing to display) */
         if (progress !== 0) {
             _display_frame.call(this, _seq2frame.call(this, seqno));
-            this._status.seqno = seqno;
+            this._state.seqno = seqno;
         }
 
         /* invoke last frame callback */
@@ -318,14 +318,14 @@
 
             switch (progress) {
                 case 0:
-                    that._status.timeout = null;
+                    that._state.timeout = null;
                     return;
                 case 1:
                 case 3:
                     // regular timeout
                     if (s.mode === "varsequence") {
                         // note: seqno was already updated by step() which is what we want
-                        delay = s.sequence[2 * that._status.seqno + 1];
+                        delay = s.sequence[2 * that._state.seqno + 1];
                     } else {
                         delay = s.delay;
                     }
@@ -337,25 +337,25 @@
                     if (s.loop) {
                         if (s.mode === "varsequence") {
                             // note: seqno was already updated by step() which is what we want
-                            delay = s.sequence[2 * that._status.seqno + 1] || s.loopDelay || s.delay;
+                            delay = s.sequence[2 * that._state.seqno + 1] || s.loopDelay || s.delay || 1000;
                         } else {
-                            delay = s.loopDelay || s.delay;
+                            delay = s.loopDelay || s.delay || 1000;
                         }
 
                     } else {
-                        that._status.timeout = null;
+                        that._state.timeout = null;
                         return;
                     }
 
                     break;
             }
 
-            that._status.timeout = window.setTimeout(X, delay);
+            that._state.timeout = window.setTimeout(X, delay);
         }
 
 
         // already playing?
-        if (this._status.timeout !== null) return this;
+        if (this._state.timeout !== null) return this;
 
 
         X();
@@ -370,10 +370,10 @@
      *  Does not change the current sequence position.
      */
     function stop() {
-        var timeout = this._status.timeout;
+        var timeout = this._state.timeout;
         if (timeout !== null) {             // can the timeoutID actually be 0?
             window.clearTimeout(timeout);
-            this._status.timeout = null;
+            this._state.timeout = null;
         }
 
         return this;
@@ -385,7 +385,7 @@
      *  This is null if the cartoon has not yet started.
      */
     function getSequenceNumber() {
-        return this._status.seqno;
+        return this._state.seqno;
     }
 
 
@@ -470,8 +470,8 @@
      *
      *  This will modify the settings of a running cartoon without further questions.
      *  This may or may not have immediate effect. Take care not to mess things up.
-     *  If you want to be absolutely sure, stop() and rewind() the cartoon before
-     *  configuring.
+     *  To be on the safe side, stop() the cartoon, then configure(), then rewind()
+     *  before play()ing.
      */
     function configure(settings) {
         _merge_settings(this._settings, settings);
@@ -512,7 +512,7 @@
             _screen: screen,
             _settings: _default_settings(screen),
 
-            _status: {
+            _state: {
                 timeout: null,          /* if non-null, we're currently play()ing */
                 seqno: null             /* current sequence number */
             },

@@ -481,6 +481,17 @@
 
 
 
+    /** Dissociates the cartoon object from the screen element.
+     *
+     *  The purpose of this function is unknown.
+     */
+    function destroy() {
+        this.stop().rewind();
+        this._screen.data('cartoon', null);
+        this._screen = null;
+    }
+
+
 
 
     /** Cartoon setup function which attaches a cartoon object to the element on which it is called.
@@ -508,7 +519,7 @@
          *  otherwise create a new cartoon object from default values
          *  then merge the given settings
          */
-        cartoon = this.data('cartoon') || {
+        cartoon = screen.data('cartoon') || {
             _screen: screen,
             _settings: _default_settings(screen),
 
@@ -525,7 +536,8 @@
             displayFrame: displayFrame,
             getSequenceNumber: getSequenceNumber,
             getScreen: getScreen,
-            configure: configure
+            configure: configure,
+            destroy: destroy
         };
 
         cartoon.configure(settings);

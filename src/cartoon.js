@@ -15,7 +15,8 @@
  *  to render the cartoon. Depending on the playback mode, this may or may not coincide with
  *  the order of frames within the source image.
  *  "Sequence number" is the position within the sequence. Each sequence number has a frame number
- *  assigned to it.
+ *  assigned to it. That frame is often just called "the frame". For example, "the first frame"
+ *  means the frame associated with the sequence number 0 rather than frame number 0.
  *
  *
  *  Playback modes
@@ -26,29 +27,49 @@
  *  display is figured out.
  *
  *  In movie mode, the sequence simply consists of all frames in the order of appearance in the
- *  source image.
+ *  source image. The sequence numbers equal the frame numbers. The frames are played from first
+ *  through last (subject to the 'skipFirst' setting), like in a movie.
  *
+ *  In sequence mode, the sequence is specified by an array of frame numbers. This way, it is
+ *  possible to jump back and forth in the source picture, so that the same frame can be shown
+ *  several times in an animation. Obviously, the sequence length can be much larger than the
+ *  frame count then.
+ *
+ *  The varsequence mode takes the idea of sequences one step further. While the delay between
+ *  frames is constant in sequence mode, an individual delay is specified for each frame in
+ *  varsequence mode. Thus, the sequence array is twice as big, as each frame number is followed
+ *  by the delay to wait after that frame.
+ *
+ *
+ *  Invocation
+ *  ==========
+ *
+ *  To set up the cartoon, create a cartoon object like this:
+ *
+ *      var cartoon = $("#id").cartoon(options);
+ *
+ *  where options is a simple key-value object which maps option names to values. Most options
+ *  are optional (this wording appears redundant), being supplemented by default values, but
+ *  some must be supplied.
+ *
+ *  The cartoon object then offers these public methods to call:
+ *
+ *      play()                  starts playing the cartoon
+ *      stop()                  stops playing the cartoon
+ *      step()                  advances the animation by one step
+ *      rewind()                rewinds the cartoon to the beginning, i.e. sequence number 0
+ *      skipTo(seqno)           displays the frame assigned to the given sequence number
+ *      displayFrame(frameno)   displays the frame with the given frame number
+ *      getSequenceNumber()     returns the cartoon's current sequence number
+ *      getScreen()             returns the screen element
+ *      configure(options)      modifies the configuration of the cartoon
+ *      destroy()               destroys the cartoon
+ *
+ *  Unless documented otherwise, all public functions return the cartoon object for chaining.
  *
  *
  *  Options
  *  =======
- *
- *  In short
- *  --------
- *
- *  all:
- *      options: frame {width, height}, h/v (default h)
- *
- *  mode1: movie (fixed sequence, fixed delay/fps)
- *      options: delay/fps, #frames, loop?
- *
- *  mode2: sequence (fixed delay/fps, the sequence of individual frames is separately specified)
- *      options: delay/fps, frame sequence, loop?
- *
- *  mode3: varsequence (var delay, the sequence of individual frames is separately specified)
- *      options: frame+delay sequence, loop?
- *
- *
  *
  *  General options
  *  ---------------
@@ -56,6 +77,7 @@
  *
  *      mode: "movie" | "sequence" | "varsequence"
  *          "seq" is an alias for "sequence", and "varseq" is an alias for "varsequence"
+ *          Default is "movie".
  *      width: the width of a frame in the source image
  *          default is the width of the screen element
  *      height: the height of a frame in the source image
@@ -77,47 +99,48 @@
  *          if loop == true, you can use this to specify a custom delay when the movie starts over,
  *          otherwise it defaults the standard delay
  *          a value of 0 is treated as if this option were not present
- *      skipFirst
+ *      skipFirst: skip the first sequence number
+ *          This applies only to the very first play() after the cartoon was set up. When looping or
+ *          rewind()ing, the first frame will always be shown. The idea is that the first frame
+ *          is probably already showing on page load because the background picture was set up so by
+ *          static CSS.
  *
  *  Movie mode options
  *  ------------------
  *      delay: the delay between two frames in ms
- *          defaults to 100, values smaller than 10 won't be accepted (this may change in the future)
+ *          Defaults to 100, values smaller than 10 won't be accepted (this may change in the future).
  *      fps: frames per seconds
- *          overrides delay and sets it to 1000/fps
- *          not set by default, but delay defaults to 100 ms which translates to 10 fps
- *          should not exceed 100 or so, MUST not exceed 1000
+ *          Overrides delay and sets it to 1000/fps. Not set by default, but delay defaults to 100 ms
+ *          which translates to 10 fps. Should not exceed 100 or so, MUST not exceed 1000.
  *      frameCount: number of frames in the source image
  *          You MUST set this option, otherwise the cartoon will not run.
  *
  *  Sequence mode options
  *  ---------------------
- *      has the same options like movie, except frameCount is not needed, instead we have
+ *      Has the same options (and default values) like movie mode, except frameCount is not needed,
+ *      instead we have
  *
  *      sequence: array of frame numbers
- *          the sequence specification; each element is a frame number
+ *          The sequence specification; each element is a frame number.
  *
- *  Varsequence mode options
+ *  VarSequence mode options
  *  ------------------------
  *      The only option (besides the general options) is
  *
  *      sequence: array of frame numbers and delays
- *          the sequence specification
- *          every odd-numbered element is a frame number,
- *          every even-numbered element is the delay in ms to the next frame
- *          if the last frame number is the last element (i.e. sequence.length is odd), the animation
- *          is played only once,
- *          if the last frame number is followed by another delay (i.e. sequence.length is even), this
- *          overrides the loopDelay setting (TODO: want that?)
+ *          The sequence specification.
+ *          Each odd-numbered element is a frame number,
+ *          each even-numbered element is the delay in ms to the next frame.
+ *          If the last frame number is the last element (i.e. sequence.length is odd), the animation
+ *          is played only once, if the last frame number is followed by another delay (i.e.
+ *          sequence.length is even), this overrides the loopDelay setting (TODO: want that?)
  *
  *
- *  Unless documented otherwise, all public functions return the cartoon object for chaining.
  */
 
 (function ($) {
 
 
-// TODO: refine comment
     /****   Auxiliary functions that need not be part of the inner closure.     ****/
 
 
@@ -207,7 +230,7 @@
 
 
 
-        /** Changes the configuration of the cartoon.
+        /** Modifies the configuration of the cartoon.
          *  The argument is the same as passed to the cartoon creation function.
          *
          *  This will modify the settings of a running cartoon without further questions.
@@ -410,6 +433,12 @@
 
 
 
+        /** Starts playing the cartoon.
+         *
+         *  Continues with the sequence number following that where it left off. If the end of the
+         *  sequence was already reached before and looping is disabled, this won't have any effect.
+         *  In that case, use rewind() first.
+         */
         function play() {
             var that = this;
 
@@ -471,7 +500,7 @@
 
 
 
-        /** Stops the cartoon.
+        /** Stops playing the cartoon.
          *  Does not change the current sequence position.
          */
         function stop() {
@@ -497,10 +526,11 @@
 
 
         /** Returns the screen element, i.e. the element in which the cartoon is displayed,
-         *  as a jQuery result set.
+         *  as a jQuery result set. Most of the time this is the jQuery object that you
+         *  initially called the cartoon() method on.
          *
          *  This can be useful to identify the screen element from a callback function,
-         *  which gets the
+         *  which gets the passed the cartoon object as an argument.
          */
         function getScreen() {
             return screen;
@@ -511,7 +541,9 @@
 
         /** Dissociates the cartoon object from the screen element.
          *
-         *  The purpose of this function is unknown.
+         *  This makes resources eligible for garbage collection. Use this if the lifetime
+         *  of a cartoon is shorter than the page lieftime, i.e. the cartoon is only temporarily
+         *  displayed. You may set up another cartoon on the same screen element later.
          */
         function destroy() {
             this.stop().rewind();

@@ -117,296 +117,14 @@
 (function ($) {
 
 
-    /** Deals the CSS to display the frame with the given number.
-     *
-     *  Does nothing if the frame number is null (a convenience especially for you).
-     *  Does not check if there actually is a frame with that number.
-     *  Does not interfere with the sequence status in any way.
-     */
-    function _display_frame(frameno) {
-        var s = this._settings;
-        var x, y;
-
-        if (frameno === null) return;
-
-        if (s.orientation.charAt(0) === "h") {
-            x = -(frameno * s.width + s.offsetX);
-            y = -s.offsetY;
-        } else {
-            x = -s.offsetX;
-            y = -(frameno * s.height + s.offsetY);
-        }
-
-        this._screen.css("background-position", x.toString() + "px " + y.toString() + "px");
-    }
-
-
-
-
-    /** Maps sequence numbers to frame numbers according to the configured playback mode.
-     *
-     *  Performs sanity checks on the sequence number and returns null, if it's not in
-     *  range of the sequence. Note that 0 is a valid frame number, so you have to use
-     *  === null when checking the return value.
-     */
-    function _seq2frame(seqno) {
-        var s = this._settings;
-        var frameno;
-
-        /* sanitize for lower bound */
-        if (seqno < 0) seqno = 0;
-
-        /* lookup the frame number assigned to the sequence number, thereby sanitizing for the
-         *  upper sequence number bound */
-        switch (s.mode) {
-            case "movie":
-                // in movie mode, the frameno equals the seqno
-                if (seqno >= s.frameCount) return null;
-                frameno = seqno;
-                break;
-            case "sequence":
-                if (seqno >= s.sequence.length) return null;
-                frameno = s.sequence[seqno];
-                break;
-            case "varsequence":
-                if (seqno >= Math.floor((s.sequence.length + 1) / 2)) return null;
-                frameno = s.sequence[2 * seqno];
-                break;
-            //default: return null;
-        }
-
-        return frameno;
-    }
-
-
-
-
-    /** Displays the frame with the given frame number.
-     *
-     *  Does not check if there actually is a frame with that number. If there's not,
-     *  you'll probably won't see anything.
-     *
-     *  Does not change the status of the cartoon, in particular doesn't stop the
-     *  cartoon if it's currently playing or modify its sequence number.
-     */
-    function displayFrame(frameno) {
-        _display_frame.call(this, frameno);
-        return this;
-    }
-
-
-
-
-    /** Displays the frame assigned to the given sequence number.
-     *
-     *  Performs sanity checks on the sequence number and adjusts it, if it's not in
-     *  range of the configured sequence. (details remain unspecified and are subject to change)
-     *
-     *  Does not stop the cartoon if it's currently playing.
-     */
-    function skipTo(seqno) {
-        var frameno = _seq2frame.call(this, seqno);
-
-        if (frameno !== null) {
-            _display_frame.call(this, frameno);
-            this._state.seqno = seqno;
-        }
-
-// TODO: invoke onLastFrame callback
-
-        return this;
-    }
-
-
-    /** Rewinds the cartoon to the beginning, i.e. sequence number 0.
-     *  Does not stop the cartoon if it's currently playing.
-     */
-    function rewind() {
-        return this.skipTo(0);
-    }
-
-
-
-
-    /** Advances the animation by one step.
-     *
-     *  Adjusts status accordingly (updates seqno).
-     *
-     *  Returns a number indicating the animation progress:
-     *      0   - no more frames to play (nothing changed)
-     *      1   - ok, next frame in sequence displayed
-     *      2   - like 1, and this is the last frame in the sequence (callback triggered)
-     *      3   - like 1, and we just wrapped around
-     *
-     */
-    function step() {
-        var s = this._settings;
-        var seqno = this._state.seqno;
-        var seqlen;
-        var progress;
-
-
-        /* figure out the sequence length */
-        switch (s.mode) {
-            case "movie":
-                seqlen = s.frameCount;
-                break;
-            case "sequence":
-                seqlen = s.sequence.length;
-                break;
-            case "varsequence":
-                seqlen = Math.floor((s.sequence.length + 1) / 2);
-                break;
-        }
-
-
-        /* make up the next sequence number to be displayed,
-         *  not yet taking sequence range into account */
-        if (seqno === null) {
-            seqno = s.skipFirst ? 1 : 0;
-        } else {
-            seqno++;
-        }
-
-
-        /* adjust seqno for the upper range bound and set status accordingly */
-        if (seqno >= seqlen) {
-            // the new seqno is beyond sequence range
-            //  wrap around if looping is enabled
-            if (s.loop) {
-                seqno = 0;
-                progress = 3
-            } else {
-                progress = 0;
-            }
-        } else if (seqno === seqlen - 1) {
-            // the new seqno is the last one in the sequence
-            progress = 2;
-        } else {
-            // just any seqno
-            progress = 1;
-        }
-
-
-        /* display the thing (unless nothing to display) */
-        if (progress !== 0) {
-            _display_frame.call(this, _seq2frame.call(this, seqno));
-            this._state.seqno = seqno;
-        }
-
-        /* invoke last frame callback */
-        if (progress === 2 && s.onLastFrame) s.onLastFrame(this);
-
-        return progress;
-    }
-
-
-
-
-
-    function play() {
-        var that = this;
-        var s = that._settings;
-
-
-        function X() {
-            var progress;
-            var delay;
-
-
-            progress = that.step();
-
-            switch (progress) {
-                case 0:
-                    that._state.timeout = null;
-                    return;
-                case 1:
-                case 3:
-                    // regular timeout
-                    if (s.mode === "varsequence") {
-                        // note: seqno was already updated by step() which is what we want
-                        delay = s.sequence[2 * that._state.seqno + 1];
-                    } else {
-                        delay = s.delay;
-                    }
-
-                    break;
-
-                case 2:
-                    // last seqno: set loop timeout if loop enabled, otherwise stop
-                    if (s.loop) {
-                        if (s.mode === "varsequence") {
-                            // note: seqno was already updated by step() which is what we want
-                            delay = s.sequence[2 * that._state.seqno + 1] || s.loopDelay || s.delay || 1000;
-                        } else {
-                            delay = s.loopDelay || s.delay || 1000;
-                        }
-
-                    } else {
-                        that._state.timeout = null;
-                        return;
-                    }
-
-                    break;
-            }
-
-            that._state.timeout = window.setTimeout(X, delay);
-        }
-
-
-        // already playing?
-        if (this._state.timeout !== null) return this;
-
-
-        X();
-
-        return this;
-    }
-
-
-
-
-    /** Stops the cartoon.
-     *  Does not change the current sequence position.
-     */
-    function stop() {
-        var timeout = this._state.timeout;
-        if (timeout !== null) {             // can the timeoutID actually be 0?
-            window.clearTimeout(timeout);
-            this._state.timeout = null;
-        }
-
-        return this;
-    }
-
-
-
-    /** Returns the cartoon's current sequence number, i.e. the position within the animation.
-     *  This is null if the cartoon has not yet started.
-     */
-    function getSequenceNumber() {
-        return this._state.seqno;
-    }
-
-
-
-    /** Returns the screen element, i.e. the element in which the cartoon is displayed,
-     *  as a jQuery result set.
-     *
-     *  This can be useful to identify the screen element from a callback function,
-     *  which gets the
-     */
-    function getScreen() {
-        return this._screen;
-    }
-
-
+// TODO: refine comment
+    /****   Auxiliary functions that need not be part of the inner closure.     ****/
 
 
         /** Creates a default settings object for the given screen
          *  usable as a base for further adjustments.
          */
-        function _default_settings(screen) {
+        function default_settings(screen) {
             return {
                 mode: "movie",
                 width: screen.width(),
@@ -419,10 +137,12 @@
                 skipFirst: false,
                 loop: false,
                 loopDelay: 0,
-                sequence: [ ],
+                sequence: null,
                 onLastFrame: null
             };
         }
+
+
 
 
         /** Merges the settings passed into the target settings
@@ -431,7 +151,7 @@
          *  We have this separate from configure() to retain the free
          *  choice of the target object.
          */
-        function _merge_settings(target, settings) {
+        function merge_settings(target, settings) {
             if (!settings) return;
 
             // translate fps to delay; non-numeric values are rejected
@@ -465,32 +185,6 @@
 
 
 
-    /** Changes the configuration of the cartoon.
-     *  The argument is the same as passed to the cartoon creation function.
-     *
-     *  This will modify the settings of a running cartoon without further questions.
-     *  This may or may not have immediate effect. Take care not to mess things up.
-     *  To be on the safe side, stop() the cartoon, then configure(), then rewind()
-     *  before play()ing.
-     */
-    function configure(settings) {
-        _merge_settings(this._settings, settings);
-        return this;
-    }
-
-
-
-
-    /** Dissociates the cartoon object from the screen element.
-     *
-     *  The purpose of this function is unknown.
-     */
-    function destroy() {
-        this.stop().rewind();
-        this._screen.data('cartoon', null);
-        this._screen = null;
-    }
-
 
 
 
@@ -508,21 +202,342 @@
 
     $.fn.cartoon = function (settings) {
 
-        var screen, cartoon;
+        var screen, state, s, cartoon;
 
+
+
+
+        /** Changes the configuration of the cartoon.
+         *  The argument is the same as passed to the cartoon creation function.
+         *
+         *  This will modify the settings of a running cartoon without further questions.
+         *  This may or may not have immediate effect. Take care not to mess things up.
+         *  To be on the safe side, stop() the cartoon, then configure(), then rewind()
+         *  before play()ing.
+         */
+        function configure(settings) {
+            merge_settings(s, settings);
+            return this;
+        }
+
+
+
+
+        /** Deals the CSS to display the frame with the given number.
+         *
+         *  Does nothing if the frame number is null (a convenience especially for you).
+         *  Does not check if there actually is a frame with that number.
+         *  Does not interfere with the sequence status in any way.
+         */
+        function display_frame(frameno) {
+            var x, y;
+
+            if (frameno === null) return;
+
+            if (s.orientation.charAt(0) === "h") {
+                x = -(frameno * s.width + s.offsetX);
+                y = -s.offsetY;
+            } else {
+                x = -s.offsetX;
+                y = -(frameno * s.height + s.offsetY);
+            }
+
+            screen.css("background-position", x.toString() + "px " + y.toString() + "px");
+        }
+
+
+
+
+        /** Maps sequence numbers to frame numbers according to the configured playback mode.
+         *
+         *  Performs sanity checks on the sequence number and returns null, if it's not in
+         *  range of the sequence. Note that 0 is a valid frame number, so you have to use
+         *  === null when checking the return value.
+         */
+        function seq2frame(seqno) {
+            var frameno;
+
+            /* sanitize for lower bound */
+            if (seqno < 0) seqno = 0;
+
+            /* lookup the frame number assigned to the sequence number, thereby sanitizing for the
+             *  upper sequence number bound */
+            switch (s.mode) {
+                case "movie":
+                    // in movie mode, the frameno equals the seqno
+                    if (seqno >= s.frameCount) return null;
+                    frameno = seqno;
+                    break;
+                case "sequence":
+                    if (seqno >= s.sequence.length) return null;
+                    frameno = s.sequence[seqno];
+                    break;
+                case "varsequence":
+                    if (seqno >= Math.floor((s.sequence.length + 1) / 2)) return null;
+                    frameno = s.sequence[2 * seqno];
+                    break;
+                //default: return null;
+            }
+
+            return frameno;
+        }
+
+
+
+
+        /** Displays the frame with the given frame number.
+         *
+         *  Does not check if there actually is a frame with that number. If there's not,
+         *  you'll probably won't see anything.
+         *
+         *  Does not change the status of the cartoon, in particular doesn't stop the
+         *  cartoon if it's currently playing or modify its sequence number.
+         */
+        function displayFrame(frameno) {
+            display_frame(frameno);
+            return this;
+        }
+
+
+
+
+        /** Displays the frame assigned to the given sequence number.
+         *
+         *  Performs sanity checks on the sequence number and adjusts it, if it's not in
+         *  range of the configured sequence. (details remain unspecified and are subject to change)
+         *
+         *  Does not stop the cartoon if it's currently playing.
+         */
+        function skipTo(seqno) {
+            var frameno = seq2frame.call(this, seqno);
+
+            if (frameno !== null) {
+                display_frame(frameno);
+                this._state.seqno = seqno;
+            }
+            // else?
+
+// TODO: invoke onLastFrame callback
+
+            return this;
+        }
+
+
+
+
+        /** Rewinds the cartoon to the beginning, i.e. sequence number 0.
+         *  Does not stop the cartoon if it's currently playing.
+         */
+        function rewind() {
+            return this.skipTo(0);
+        }
+
+
+
+
+        /** Advances the animation by one step.
+         *
+         *  Adjusts status accordingly (updates seqno).
+         *
+         *  Returns a number indicating the animation progress:
+         *      0   - no more frames to play (nothing changed)
+         *      1   - ok, next frame in sequence displayed
+         *      2   - like 1, and this is the last frame in the sequence (callback triggered)
+         *      3   - like 1, and we just wrapped around
+         *
+         */
+        function step() {
+            var seqno = state.seqno;
+            var seqlen;
+            var progress;
+
+
+            /* figure out the sequence length */
+            switch (s.mode) {
+                case "movie":
+                    seqlen = s.frameCount;
+                    break;
+                case "sequence":
+                    seqlen = s.sequence.length;
+                    break;
+                case "varsequence":
+                    seqlen = Math.floor((s.sequence.length + 1) / 2);
+                    break;
+            }
+
+
+            /* make up the next sequence number to be displayed,
+             *  not yet taking sequence range into account */
+            if (seqno === null) {
+                seqno = s.skipFirst ? 1 : 0;
+            } else {
+                seqno++;
+            }
+
+
+            /* adjust seqno for the upper range bound and set status accordingly */
+            if (seqno >= seqlen) {
+                // the new seqno is beyond sequence range
+                //  wrap around if looping is enabled
+                if (s.loop) {
+                    seqno = 0;
+                    progress = 3
+                } else {
+                    progress = 0;
+                }
+            } else if (seqno === seqlen - 1) {
+                // the new seqno is the last one in the sequence
+                progress = 2;
+            } else {
+                // just any seqno
+                progress = 1;
+            }
+
+
+            /* display the thing (unless nothing to display) */
+            if (progress !== 0) {
+// TODO: check seq2frame return value
+                display_frame(seq2frame.call(this, seqno));
+                state.seqno = seqno;
+            }
+
+            /* invoke last frame callback */
+            if (progress === 2 && s.onLastFrame) s.onLastFrame(this);
+
+            return progress;
+        }
+
+
+
+
+        function play() {
+            var that = this;
+
+
+            function X() {
+                var progress;
+                var delay;
+
+
+                progress = that.step();
+
+                switch (progress) {
+                    case 0:
+                        state.timeout = null;
+                        return;
+                    case 1:
+                    case 3:
+                        // regular timeout
+                        if (s.mode === "varsequence") {
+                            // note: seqno was already updated by step() which is what we want
+                            delay = s.sequence[2 * that._state.seqno + 1];
+                        } else {
+                            delay = s.delay;
+                        }
+
+                        break;
+
+                    case 2:
+                        // last seqno: set loop timeout if loop enabled, otherwise stop
+                        if (s.loop) {
+                            if (s.mode === "varsequence") {
+                                // note: seqno was already updated by step() which is what we want
+                                delay = s.sequence[2 * that._state.seqno + 1] || s.loopDelay || s.delay || 1000;
+                            } else {
+                                delay = s.loopDelay || s.delay || 1000;
+                            }
+
+                        } else {
+                            state.timeout = null;
+                            return;
+                        }
+
+                        break;
+                }
+
+                state.timeout = window.setTimeout(X, delay);
+            }
+
+
+            // already playing?
+            if (state.timeout !== null) return this;
+
+
+            X();
+
+            return this;
+        }
+
+
+
+
+        /** Stops the cartoon.
+         *  Does not change the current sequence position.
+         */
+        function stop() {
+            if (state.timeout !== null) {               // can the timeoutID actually be 0?
+                window.clearTimeout(state.timeout);
+                state.timeout = null;
+            }
+
+            return this;
+        }
+
+
+
+
+        /** Returns the cartoon's current sequence number, i.e. the position within the animation.
+         *  This is null if the cartoon has not yet started.
+         */
+        function getSequenceNumber() {
+            return state.seqno;
+        }
+
+
+
+
+        /** Returns the screen element, i.e. the element in which the cartoon is displayed,
+         *  as a jQuery result set.
+         *
+         *  This can be useful to identify the screen element from a callback function,
+         *  which gets the
+         */
+        function getScreen() {
+            return screen;
+        }
+
+
+
+
+        /** Dissociates the cartoon object from the screen element.
+         *
+         *  The purpose of this function is unknown.
+         */
+        function destroy() {
+            this.stop().rewind();
+            screen.data('cartoon', null);
+            screen = state = s = this._screen = this._settings = this._state = null;
+        }
+
+
+
+
+
+
+        /****   Ok, let's begin.    ****/
 
         /* narrow down the jQuery selection to only one matched element */
         screen = this.length === 1 ? this : this.first();
 
 
-        /* check if a cartoon is already assigned to this element, take that one,
-         *  otherwise create a new cartoon object from default values
-         *  then merge the given settings
+        /* Check if a cartoon is already associated with this element.
+         *  If so, take that one, otherwise create a new cartoon object from default values.
+         *  WARNING: If we pick up an already existing cartoon, our private variables here
+         *  are not properly initialized. Private methods might therefore not work.
          */
         cartoon = screen.data('cartoon') || {
             _screen: screen,
-            _settings: _default_settings(screen),
-
+            _settings: default_settings(screen),
             _state: {
                 timeout: null,          /* if non-null, we're currently play()ing */
                 seqno: null             /* current sequence number */
@@ -540,22 +555,39 @@
             destroy: destroy
         };
 
-        cartoon.configure(settings);
+
+        /* Set up our local vars to point to the cartoon's state and settings.
+         *  Our methods will then work on the closured vars, saving access to the cartoon properties
+         *  with much longer names (this saves us bytes on minification).
+         *  One noteworthy point is that in case we work on an earlier created cartoon (extracted by screen.data())
+         *  the public methods of that object and private methods called from there will work on the earlier
+         *  created closure, while private methods called directly from here don't have access to that closure;
+         *  they access /our/ closure instead. That's why the local vars of both closures must point to the same
+         *  objects. Therefore we init our closure's private vars from the state saved in the cartoon object.
+         */
+        screen = cartoon._screen;
+        s = cartoon._settings;
+        state = cartoon._state;
+
+
+        /* now merge supplied settings to existing config */
+        merge_settings(s, settings);
+
 
 
         /* some sanity checks */
-        switch (cartoon._settings.mode) {
+        switch (s.mode) {
             case "movie":
-                if (!cartoon._settings.frameCount)
+                if (!s.frameCount)
                     $.error("Frame count not set in movie mode!");
                 break;
             case "sequence":
             case "varsequence":
-                if (!cartoon._settings.sequence.length)
+                if (!s.sequence.length)
                     $.error("No playback sequence given!");
                 break;
             default:
-                $.error('Unkown playback mode: ' + cartoon._settings.mode);
+                $.error('Unkown playback mode: ' + s.mode);
         }
 
 
@@ -565,5 +597,3 @@
         return cartoon;
     };
 }(jQuery));
-
-
